@@ -1,6 +1,7 @@
 #include "raylib.h"
 #include <stdlib.h>
 #include <time.h>
+#include <stdio.h>
 #define ARESTA 40
 #define LARGURA 1080
 #define ALTURA 440
@@ -8,6 +9,7 @@
 #define LINHA 11
 #define N 100
 #define RAIO 20
+#define EXPLOSAO 3
 
 typedef struct{
     int xPos;
@@ -25,15 +27,21 @@ typedef struct{
     double tempo;
     int plantada;
     int xPos, yPos;
+    int xExp[EXPLOSAO*EXPLOSAO], yExp[EXPLOSAO*EXPLOSAO], estadoExp;
+    double tempoExp;
 }BOMBA;
 
 void movDir( int *xPos, int *yPos, int tecla); // Altera o valor da posição baseado no valor apertado no teclado
 
 int podeMover( int xPos, int yPos, char matriz[][COLUNA], int tecla, int linha, int coluna, BOMBA bomba);// Retorna 1 se o movimento eh valido
 
-int tempoCmp(double tempo, int tempoPerc); // Marca o passar de um tempo "tempoPerc"
+int tempoCmp(double tempo, float tempoPerc); // Marca o passar de um tempo "tempoPerc"
 
 void plantarBomba(BOMBA *bomba, JOGADOR jogador); // Função que executa as funcionalidades iniciais de plantar a bomba
+
+void expBomba(BOMBA *bomba, int raio); // Função que passa as posicoes x,y da explosao
+
+void controleBomba(BOMBA *bomba, char matriz[][COLUNA], int tecla, JOGADOR jogador); // Funcao que executa todos os controles de estado da bomba
 
 int main(void)
 {
@@ -76,7 +84,8 @@ int main(void)
     posX = 0;//coordenada x central
     posY = 0;//coordenada y central
     bomba.plantada = 0;
-
+    jogador.ultMov = KEY_RIGHT;
+    bomba.estadoExp = 0;
     InitWindow(LARGURA, ALTURA, "Jogo"); // Ajusta o titulo da janela
     SetTargetFPS(60);//Ajusta o jogo para executar a 60 quadros por segundo
 
@@ -98,13 +107,10 @@ int main(void)
 
 
         // Controle da bomba
-        if(tecla == KEY_SPACE && !bomba.plantada &&
-           podeMover(jogador.xPos, jogador.yPos, matriz, jogador.ultMov, LINHA, COLUNA, bomba)) // Bomba so pode ser mandada se o jogador estiver olhando para um ponto livre
-            plantarBomba(&bomba, jogador);
-        else if(tempoCmp(bomba.tempo, 4)) // Se acabar o tempo
-        {
-            bomba.plantada = 0;
-        }
+        controleBomba(&bomba,matriz,tecla,jogador);
+
+
+
 
         BeginDrawing();
         ClearBackground(RAYWHITE);//Limpa e define uma cor de fundo
@@ -143,8 +149,12 @@ int main(void)
 
         if(bomba.plantada) // Desenhar a bomba se ela estiver plantada
             DrawCircle(bomba.xPos * ARESTA + RAIO, bomba.yPos * ARESTA + RAIO, RAIO, WHITE);
-
-
+        if(bomba.estadoExp){
+            for(i = 0; i < EXPLOSAO * EXPLOSAO; i++){
+                if(matriz[bomba.yExp[i]][bomba.xExp[i]] != 'W')
+                    DrawCircle(bomba.xExp[i] * ARESTA + RAIO,bomba.yExp[i] * ARESTA + RAIO, RAIO, RED);
+            }
+        }
         EndDrawing();
         }
 
@@ -160,12 +170,13 @@ void plantarBomba(BOMBA *bomba, JOGADOR jogador)
     bomba -> xPos = jogador.xPos;
     bomba -> yPos = jogador.yPos;
 }
-int tempoCmp(double tempo, int tempoPerc)
+int tempoCmp(double tempo, float tempoPerc)
 {
     int passouTempo = 0;
 
-    if(GetTime() - tempo > tempoPerc) // Se o tempo for maior que o esperado
+    if(GetTime() - tempo > tempoPerc)// Se o tempo for maior que o esperado
         passouTempo = 1;
+
 
     return passouTempo;
 }
@@ -199,4 +210,44 @@ int podeMover( int xPos, int yPos, char matriz[][COLUNA], int tecla, int linha, 
         flag_mov = 1;
 
     return flag_mov;
+}
+
+void expBomba(BOMBA *bomba, int raio)
+{
+    int i, j, contPos = 0;
+
+    for(i = bomba->xPos - raio/2; i <= bomba->xPos + raio/2; i++){
+        for(j = bomba->yPos - raio/2; j <= bomba->yPos + raio/2; j++){
+            //Lendo todos os pontos da matriz detro da explosao
+            bomba->xExp[contPos] = i;
+            bomba->yExp[contPos] = j;
+            contPos++;
+        }
+    }
+}
+
+void controleBomba(BOMBA *bomba, char matriz[][COLUNA], int tecla, JOGADOR jogador)
+{
+    int i;
+    // Colocação da Bomba
+    if(tecla == KEY_SPACE && !bomba->plantada &&
+       podeMover(jogador.xPos, jogador.yPos, matriz, jogador.ultMov, LINHA, COLUNA, *bomba)){ // Bomba so pode ser mandada se o jogador estiver olhando para um ponto livre
+        plantarBomba(bomba, jogador);
+        bomba->tempoExp = 0;
+
+    } // Tempo de explosao da bomba
+    else if(tempoCmp(bomba->tempo, 4) && bomba->plantada) // Se acabar o tempo
+    {
+        bomba->plantada = 0;
+        expBomba(bomba, EXPLOSAO);
+        bomba->tempoExp = GetTime();
+        bomba->estadoExp = 1;
+
+    } // Explosao da bomba
+    else if(tempoCmp(bomba->tempoExp, .15) && bomba->estadoExp){
+        bomba->estadoExp = 0;
+      for(i = 0; i < 9; i++)
+        if(matriz[bomba->yExp[i]][bomba->xExp[i]] == 'D') // Removendo as paredes, talvez isso deva ser feito em outra parte código
+              matriz[bomba->yExp[i]][bomba->xExp[i]] = ' ';
+    }
 }
